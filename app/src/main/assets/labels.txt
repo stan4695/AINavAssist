@@ -1,0 +1,6 @@
+bench
+trash_bin
+pillar
+tree_trunk
+bush
+fence

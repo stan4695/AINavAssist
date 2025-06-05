@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">AINaviAssist</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="interface_time">Interface Time:</string>
+    <string name="gpu">GPU</string>
+    <string name="patreon_message">Support me at Patreon</string>
+    <string name="gpu_acceleration">Hardware Acceleration (GPU)</string>
+    <string name="gpu_acceleration_description">Use GPU acceleration for faster inference</string>
+    <string name="detection_settings">Detection Settings</string>
+    <string name="detection_sensitivity">Detection Sensitivity</string>
+    <string name="accessibility">Accessibility</string>
+    <string name="voice_announcements">Voice Announcements</string>
+    <string name="voice_announcements_description">Announce detected obstacles using voice</string>
+    <string name="haptic_feedback">Haptic Feedback</string>"
+    <string name="haptic_feedback_description">Vibrate when obstacles are detected nearby</string>
+    <string name="about">About</string>
+    <string name="ainaviassist">AI Navigation Assistant</string>
+    <string name="ainaviassist_description">This application uses YOLOv10 object detection and ultrasonic sensors to help visually impaired users navigate safely.</string>
+    <string name="esp32_not_found">ESP32 device not found</string>
+    <string name="bluetooth_failed">Bluetooth connection failed: %s</string>
+    <string name="low_sensitivity">Fewer detections</string>
+    <string name="high_sensitivity">More detections</string>
+    <string name="medium_sensitivity">Medium</string>
+    <string name="inference_time">%1$dms</string>
+    <string name="inference_time_title">Inference Time: </string>
+</resources>
