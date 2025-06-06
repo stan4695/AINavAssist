@@ -21,13 +21,13 @@ class HapticFeedbackManager(private val context: Context) {
     }
 
     private var lastVibrationTime = 0L
-    private val VIBRATION_COOLDOWN = 500L // 500ms cooldown between vibrations
+    private val VIBRATION_COOLDOWN = 500L // cooldown de 0.5 secunde intre fiecare vibratie
 
     companion object {
         private const val TAG = "HapticFeedbackManager"
-        private const val DISTANCE_THRESHOLD = 150 // cm
-        private const val MIN_DISTANCE = 10 // cm - closest expected distance
-        private const val MAX_INTENSITY = 255 // maximum vibration intensity
+        private const val DISTANCE_THRESHOLD = 150 // distanta de la care incep sa se genereze vibratii
+        private const val MIN_DISTANCE = 30 // valoarea de la care incepe sa se genereze vibratii de intensitate maxima
+        private const val MAX_INTENSITY = 255 // valoarea maxima suportata de functia createOneShot() din VibrationEffect
     }
 
     // Oferirea feedback-ului haptic pe baza distantelor fata de obstacole
@@ -36,7 +36,7 @@ class HapticFeedbackManager(private val context: Context) {
             return
         }
 
-        // Vibreaza doar daca obstacolul se afla la o distanta mai mica decat DISTANCE_THRESHOLD
+        // Se genereaza o vibratie doar daca obstacolul se afla la o distanta mai mica decat DISTANCE_THRESHOLD
         if (distance > DISTANCE_THRESHOLD) {
             Log.d(TAG, "Obstacolul este prea departe ($distance cm).")
             return
@@ -48,28 +48,22 @@ class HapticFeedbackManager(private val context: Context) {
             return
         }
 
-        // Calculeaza intensitatea vibratiilor bazat pe distanta fata de acestea
         var normalisedDistance: Int
         if (distance < MIN_DISTANCE) {
-            normalisedDistance = MIN_DISTANCE
+            normalisedDistance = 0
         } else {
             normalisedDistance = distance
         }
+
+        // Calculeaza intensitatea vibratiilor bazat pe distanta fata de acestea
         val vibrationIntensityPrecent = 1.0f - (normalisedDistance.toFloat() / DISTANCE_THRESHOLD.toFloat())
         val vibrationIntensity = (vibrationIntensityPrecent * MAX_INTENSITY).toInt()
 
-        // Calculeaza durata bazat pe distanta fata de obstacol
-        val duration = (50 + (vibrationIntensityPrecent * 150)).toLong() // 50-200ms
+        // Calculeaza durata vibratiilor in functie de nivelul intensitatii
+        val vibrationDuration = (50 + (vibrationIntensityPrecent * 150)).toLong() // 50-200ms
 
-        Log.d(TAG, "Vibreaza cu intesitatea $vibrationIntensity pentru ${duration}ms. Distanta fata de obstacol: ${distance}cm")
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(duration, vibrationIntensity))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(duration)
-        }
-
+        Log.d(TAG, "Vibreaza cu intesitatea $vibrationIntensity pentru ${vibrationDuration}ms. Distanta fata de obstacol: ${distance}cm")
+        vibrator.vibrate(VibrationEffect.createOneShot(vibrationDuration, vibrationIntensity))
         lastVibrationTime = currentTime
     }
 

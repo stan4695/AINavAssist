@@ -40,9 +40,8 @@ class Detector(
 
     init {
         val interpreterOptions = Interpreter.Options()
-        interpreterOptions.setNumThreads(4) // Implicit 4 fire de executie pentru CPU
 
-        if (isGpuEnabled) {
+        if (isGpuEnabled) { // Daca setarea hardware acceleration este activata
             val compatList = CompatibilityList()
             if (compatList.isDelegateSupportedOnThisDevice) {
                 val delegateOptions = compatList.bestOptionsForThisDevice
@@ -53,6 +52,7 @@ class Detector(
                 Log.w("Detector", "Acest dispozitiv nu suporta hardware acceleration. Se va folosi CPU.")
             }
         } else {
+            interpreterOptions.setNumThreads(4) // Implicit 4 fire de executie pentru CPU
             Log.d("Detector", "Hardware acceleration nu este activat in setari. Se va folosi CPU.")
         }
 
@@ -69,22 +69,19 @@ class Detector(
 
         labels.forEach(::println)
 
-        val inputShape = interpreter.getInputTensor(0)?.shape()
-        val outputShape = interpreter.getOutputTensor(0)?.shape()
+        val inputShape = interpreter.getInputTensor(0)?.shape() // Extrage dimensiunile tensorului de intrare
+        val outputShape = interpreter.getOutputTensor(0)?.shape() // Extrage dimensiunile tensorului de iesire
 
+        // Conform Netron, formatul unui tensor de intrare este float32[1, 640, 640, 3], deci formatul (Batch, Width, Height, Channels)
         if (inputShape != null) {
-            tensorWidth = inputShape[1]
-            tensorHeight = inputShape[2]
-
-            if (inputShape[1] == 3) {
-                tensorWidth = inputShape[2]
-                tensorHeight = inputShape[3]
-            }
+            tensorWidth = inputShape[1] // extragem Width din tensorul de intrare
+            tensorHeight = inputShape[2] // extragem Height din tensorul de intrare
         }
 
+        // Formatul unui tensor de iesire este float[1, 300, 6]
         if (outputShape != null) {
-            numElements = outputShape[1]
-            numChannel = outputShape[2]
+            numElements = outputShape[1] // extragem numarul de elemente din tensorul de iesire
+            numChannel = outputShape[2] // extragem numarul de canale din tensorul de iesire
         }
     }
     // Reporneste interpretorul cu setari noi pentru GPU
@@ -129,13 +126,13 @@ class Detector(
         val resizedBitmap = Bitmap.createScaledBitmap(frame, tensorWidth, tensorHeight, false)
 
         val tensorImage = TensorImage(INPUT_IMAGE_TYPE)
-        tensorImage.load(resizedBitmap)
-        val processedImage = imageProcessor.process(tensorImage)
-        val imageBuffer = processedImage.buffer
+        tensorImage.load(resizedBitmap) // Incarca imaginea in TensorImage
+        val processedImage = imageProcessor.process(tensorImage) // Preproceseaza imaginea
+        val imageBuffer = processedImage.buffer // Imaginea de intrare preprocesata (normalizare si cast la FLOAT32)
 
         // Creeaza un buffer de iesire pentru rezultatele detectarii
         val output = TensorBuffer.createFixedSize(intArrayOf(1, numChannel, numElements), OUTPUT_IMAGE_TYPE)
-        interpreter.run(imageBuffer, output.buffer)
+        interpreter.run(imageBuffer, output.buffer) // Efectueaza inferenta
 
         // Extrage cele mai bune casete de delimitare din rezultatele detectarii
         val bestBoxes = bestBox(output.floatArray)
@@ -144,13 +141,14 @@ class Detector(
         inferenceTime = SystemClock.uptimeMillis() - inferenceTime
 
         if (bestBoxes.isEmpty()) {
-            detectorListener.onEmptyDetect()
+            detectorListener.onEmptyDetect() // Daca lista de casete de delimitare este goala dupa apelarea bestBoxes(), se notifica clasa CameraFragment
             return
         }
 
         detectorListener.onDetect(bestBoxes, inferenceTime)
     }
-    // Proceseaza rezultatele brute ale detectarii pentru a obtine casetele de delimitare
+
+    // Proceseaza rezultatele brute ale detectiei pentru a obtine casetele de delimitare cu un nivel de confidenta ridicat
     private fun bestBox(array: FloatArray) : List<BoundingBox> {
         val boundingBoxes = mutableListOf<BoundingBox>()
         for (resultIndex in 0 until numElements) {

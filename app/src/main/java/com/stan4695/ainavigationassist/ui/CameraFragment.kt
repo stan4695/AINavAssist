@@ -136,8 +136,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
         ttsManager = TTSManager(requireContext())
 
         // Initializare Bluetooth Manager
-        bluetoothCommunication =
-            com.stan4695.ainavigationassist.bluetooth.BluetoothCommunication(requireContext())
+        bluetoothCommunication = BluetoothCommunication(requireContext())
 
         // Initializare Haptic Feedback Manager
         hapticManager = HapticFeedbackManager(requireContext())
@@ -159,7 +158,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
                         ObstaclePosition.RIGHT -> sensor2Distance
                         ObstaclePosition.CENTER -> minOf(sensor1Distance, sensor2Distance).takeIf { it > 0 } ?: maxOf(sensor1Distance, sensor2Distance)
                     }
-                    announceObstacleWithDistance(obstacle, position, distanceToUse)                }
+                    generateAnnouncementMessage(obstacle, position, distanceToUse)                }
             }
         }
     }
@@ -232,8 +231,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
     }
 
     private fun bindCameraUseCases() {
-        val cameraProvider =
-            cameraProvider ?: throw IllegalStateException("Initializarea camerei a esuat.")
+        val cameraProvider = cameraProvider ?: throw IllegalStateException("Initializarea camerei a esuat.")
 
         // Orientarea este intotdeauna portret
         val rotation = Surface.ROTATION_0
@@ -252,12 +250,12 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setTargetRotation(rotation)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-            .setImageQueueDepth(2) 
             .build()
 
         imageAnalyzer?.setAnalyzer(cameraExecutor) { imageProxy ->
+            // Acest cod reprezinta implementarea functiei analyze() din ImageAnalysis.Analyzer si este executat pentru fiecare cadru nou
             try {
-                val bitmapBuffer = createBitmap(imageProxy.width, imageProxy.height)
+                val bitmapBuffer = createBitmap(imageProxy.width, imageProxy.height, Bitmap.Config.ARGB_8888)
                 imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
                 
                 val matrix = Matrix().apply {
@@ -285,7 +283,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
                 if (e.message?.contains("timeout") == true) {
                     handler.post {
                         Log.w(TAG, "A fost detectat un timeout pentru ImageReader. Reinitializam camera.")
-                        cameraProvider?.unbindAll()
+                        cameraProvider.unbindAll()
                         startCamera()
                     }
                 }
@@ -335,7 +333,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
         }
         if (bluetoothConnectGranted && bluetoothScanGranted) {
             initializeBluetoothConnection()
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (!bluetoothConnectGranted || !bluetoothScanGranted)) {
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             toast("Pentru utilizarea datelor de la senzorii ultrasonici este nevoie de permisiunea Bluetooth.")
         }
     }
@@ -444,13 +442,12 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
             if (_binding != null) {
                 binding.overlay.clear()
             }
-            val sensitivityThreshold = SettingsManager.getDetectionSensitivity(requireContext())
 
             // Stergerea istoricului pentru obiecte neobservate in acest frame care sunt considerate invechite
             detectionHistory.entries.removeIf { it.value.isStale() }
 
             // Ofera feedback utilizatorului referitor la lipsa de detectie cauzata de un prag prea ridicat
-            ttsManager.announceNoDetections(sensitivityThreshold)
+            ttsManager.announceNoDetections()
         }
     }
 
@@ -458,8 +455,6 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
         requireActivity().runOnUiThread {
             if (_binding != null) {
                 // Filtram casetele de delimitare in functie de pragul de sensibilitate
-                //val sensitivityThreshold = SettingsManager.getDetectionSensitivity(requireContext())
-                //val boundingBoxesHConf = boundingBoxes.filter { it.cnf >= sensitivityThreshold }
 
                 binding.inferenceTime.text = getString(R.string.inference_time, inferenceTime)
                 binding.overlay.apply {
@@ -467,18 +462,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
                     invalidate()
                 }
 
-                announceHighestConfidenceObstacle(boundingBoxes)
-
-                /*if (boundingBoxes.isEmpty()) {
-                    // Stergerea istoricului pentru obiecte neobservate in acest frame care sunt considerate invechite
-                    detectionHistory.entries.removeIf { it.value.isStale() }
-
-                    // Ofera feedback utilizatorului referitor la lipsa de detectie cauzata de un prag prea ridicat
-                    ttsManager.announceNoDetections(sensitivityThreshold)
-                } else {
-                    // Apelarea functiei de avertizare pentru obstacolul cu nivelul de confidenta cel mai mare
-                    announceHighestConfidenceObstacle(boundingBoxes)
-                }*/
+                getHighestConfidenceBB(boundingBoxes)
             }
         }
     }
@@ -489,18 +473,15 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
 
     private inner class DetectionTracker {
         var consecutiveFrames = 0
-        var lastDetectedBox: BoundingBox? = null
         var lastDetectionTime = 0L
 
-        fun update(box: BoundingBox) {
+        fun update() {
             consecutiveFrames++
-            lastDetectedBox = box
             lastDetectionTime = System.currentTimeMillis()
         }
 
         fun reset() {
             consecutiveFrames = 0
-            lastDetectedBox = null
         }
 
         fun isStale(): Boolean {
@@ -522,7 +503,7 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
         }
     }
 
-    private fun announceObstacleWithDistance(box: BoundingBox, position: ObstaclePosition, distance: Int) {
+    private fun generateAnnouncementMessage(box: BoundingBox, position: ObstaclePosition, distance: Int) {
         if (!::ttsManager.isInitialized)
             return
 
@@ -539,32 +520,35 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
         }
 
         val announcement = "${box.clsName} detected $positionText at $distanceText"
-        ttsManager.speak(announcement, box)
+        ttsManager.announceDetection(announcement)
         Log.d(TAG, "TTS Announcement: $announcement")
     }
 
-    // Implementarea functiei de avertizare pentru obstacolul cu cel mai mare nivel de confidenta (Feedback Haptic si Audio)
-    private fun announceHighestConfidenceObstacle(boundingBoxes: List<BoundingBox>) {
+    // Obtinerea obstacolului cu nivelul de confidenta cel mai mare si a distantei la care acesta se afla
+    private fun getHighestConfidenceBB(boundingBoxes: List<BoundingBox>) {
         // Actualizarea istoricului pentru toate obstacolele detectate
         val detectedClasses = mutableSetOf<String>()
 
-        for (box in boundingBoxes) {
+        // Eliminam duplicatele si pastram doar casetele cu confidenta cea mai mare pentru fiecare clsName
+        val distinctBoundingBoxesByClsName = boundingBoxes
+            .groupBy { it.clsName }
+            .mapNotNull { (_, boxesInGroup) ->
+                boxesInGroup.maxByOrNull { it.cnf }
+            }
+
+        for (box in distinctBoundingBoxesByClsName) {
             detectedClasses.add(box.clsName)
 
             val tracker = detectionHistory.getOrPut(box.clsName) { DetectionTracker() }
-            tracker.update(box)
+            tracker.update()
 
             // Verifica daca obstacolul a fost detectat in mai multe cadre succesive pentru a reduce numarul false pozitivelor
             if (tracker.consecutiveFrames >= REQUIRED_CONSECUTIVE_FRAMES) {
-                // Anunta doar acele obstacole care apar in cel putin 5 (REQUIRED_CONSECUTIVE_FRAMES) cadre consecutive
-                val highestConfidenceBox = boundingBoxes
-                    .filter { it.clsName == box.clsName }
-                    .maxByOrNull { it.cnf }
-
-                highestConfidenceBox?.let {
+                // Anuntam doar acele obstacole care apar in cel putin 10 (REQUIRED_CONSECUTIVE_FRAMES) cadre consecutive
+                box.let {
                     // Determinam pozitia obstacolului (stanga, dreapta sau in fata)
                     val position = determineObstaclePosition(it)
-                    // Salvam obstacolul si pozitia pentru anuntul ulterior
+                    // Salvam obstacolul si pozitia pentru generarea anuntului din callback-ul onDataUpdate()
                     lastDetectedObstacle = it
                     lastObstaclePosition = position
                     // Cerem datele de la senzori doar atunci cand se detecteaza un obstacol
@@ -573,15 +557,16 @@ class CameraFragment : Fragment(), Detector.DetectorListener {
                         needSensorData = true
                         bluetoothCommunication.requestSensorData()
                     }
-                 }
+                }
             }
         }
 
-        // Resetam istoricul pentru clasele care nu mai sunt detectate
+        // Resetam istoricul pentru clasele care nu au fost detectate in frame-ul curent
         detectionHistory.entries
             .filter { !detectedClasses.contains(it.key) }
             .forEach { it.value.reset() }
 
+        // Stergem istoricul mai vechi de 0,5 secunde
         detectionHistory.entries.removeIf { it.value.isStale() }
     }
 

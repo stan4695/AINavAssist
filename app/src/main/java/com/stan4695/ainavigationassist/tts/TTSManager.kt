@@ -4,7 +4,6 @@ package com.stan4695.ainavigationassist.tts
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.util.Log
-import android.view.View
 import com.stan4695.ainavigationassist.BoundingBox
 import com.stan4695.ainavigationassist.settings.SettingsManager
 import java.util.Locale
@@ -15,7 +14,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var isTtsReady = false
     private var lastAnnouncementTime = 0L
     private var lastAnnouncedObject = ""
-    private val ANNOUNCEMENT_COOLDOWN = 3000L // timp de cooldown intre anunturi
+    private val ANNOUNCEMENT_COOLDOWN = 4000L // timp de cooldown intre anunturi de 4s
 
     // Contorizarea timpului de feedback pentru lipsa de detectie
     private var lastNoDetectionFeedbackTime = 0L
@@ -40,30 +39,30 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
-    fun speak(message: String, obstacle: BoundingBox) {
+    fun announceDetection(message: String) {
         if (!isTtsReady || !SettingsManager.isTtsEnabled(context)) {
             return
         }
 
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastAnnouncementTime < ANNOUNCEMENT_COOLDOWN /*&& obstacle.clsName == lastAnnouncedObject*/) {
-            Log.d(TAG, "Un anunt este deja facut. Timpul de cooldown nu a expirat inca.")
+        if (currentTime - lastAnnouncementTime < ANNOUNCEMENT_COOLDOWN) {
+            Log.d(TAG, "Timpul de cooldown nu a expirat inca.")
             return
         }
 
         Log.d(TAG, "Speaking: $message")
         textToSpeech?.speak(message, TextToSpeech.QUEUE_FLUSH, null, "custom_message_id")
         lastAnnouncementTime = currentTime
-        lastAnnouncedObject = obstacle.clsName
     }
 
     // Functia de avertizare asupra unui treshold prea ridicat
-    fun announceNoDetections(threshold: Float) {
+    fun announceNoDetections() {
         if (!isTtsReady || !SettingsManager.isTtsEnabled(context)) {
             return
         }
 
         val message = "No objects detected at current sensitivity level"
+
         val sensitivityThreshold = SettingsManager.getDetectionSensitivity(context)
         if (sensitivityThreshold > 0.7f && System.currentTimeMillis() - lastNoDetectionFeedbackTime > NO_DETECTION_FEEDBACK_COOLDOWN && System.currentTimeMillis() - lastAnnouncementTime > NO_DETECTION_FEEDBACK_COOLDOWN) {
             Log.d(TAG, "Announcing: $message")

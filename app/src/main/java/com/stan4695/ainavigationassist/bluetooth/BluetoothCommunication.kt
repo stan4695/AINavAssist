@@ -32,9 +32,7 @@ class BluetoothCommunication(private val context: Context) {
     private val reconnectDelayMs = 2000L
 
     // On-demand reading control
-    private val isReadingActive = AtomicBoolean(false)
-    private val isReadingRequested = AtomicBoolean(false)
-    private val bothSensorsRead = AtomicBoolean(false)
+    private val isReadingActive = AtomicBoolean(false) // Tracks if a read operation is currently active
     private var sensor1Read = false
     private var sensor2Read = false
 
@@ -45,8 +43,6 @@ class BluetoothCommunication(private val context: Context) {
     // Initializarea variabilelor pentru distanțele senzorilor
     private var lastSensor1Distance = 0
     private var lastSensor2Distance = 0
-    private var lastDataReceivedTime = 0L
-    private val DATA_TIMEOUT_MS = 5000L // timeout de 5 secunde pentru actualizarea datelor
 
     companion object {
         private const val TAG = "BluetoothManager"
@@ -142,7 +138,7 @@ class BluetoothCommunication(private val context: Context) {
             bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID_SPP)
 
             Log.d(TAG, "Încercare de conectare la ${device.name}...")
-            bluetoothSocket?.connect() // Acesta este un apel blocant
+            bluetoothSocket?.connect()
 
             // Dacă connect() nu aruncă o excepție, se consideră conectat la nivel de socket
             Log.i(TAG, "Socket Bluetooth conectat cu succes la ${device.name}")
@@ -212,39 +208,31 @@ class BluetoothCommunication(private val context: Context) {
 
         if (isReadingActive.get()) {
             Log.d(TAG, "Datele de la senzori sunt deja citite. Se anuleaza noua cerere")
-            isReadingRequested.set(true)
-            return
+            return // Another read is already in progress
         }
 
         // Resetam flagurile de citire
         sensor1Read = false
         sensor2Read = false
-        bothSensorsRead.set(false)
         
         // Incepem citirea datelor
         startReadingData()
     }
 
     private fun startReadingData() {
-        if (!isConnected || inputStream == null) {
-            notifyError("Conexiunea nu a fost stabilita cu succes")
-            return
-        }
-
         // Se actualizeaza contoarele de stare
-        isReadingActive.set(true)
-        isReadingRequested.set(false)
+        isReadingActive.set(true) // Marcheaza inceperea citirii datelor
 
         Log.d(TAG, "Incepe citirea datelor prin BT.")
         
         readThread = thread {
-            val buffer = ByteArray(1024)
-            var bytes: Int
-            var dataBuffer = StringBuilder()
-            val startTime = System.currentTimeMillis()
-            val readTimeout = 3000L // 3 seconds timeout for reading
+            val buffer = ByteArray(1024) // Creearea unui buffer de 1024 octeti
+            var bytes: Int // Numarul de bytes cititi din fluxul de intrare
+            var dataBuffer = StringBuilder() // Definirea unui buffer in care vom retine string-urile
+            val startTime = System.currentTimeMillis() // Timestamp-ul de inceput al citirii
+            val readTimeout = 3000L // Timp de timeout pentru citirea datelor (3 secunde)
 
-            while (isConnected && isReadingActive.get() && !bothSensorsRead.get()) {
+            while (isConnected && isReadingActive.get() && !(sensor1Read && sensor2Read)) {
                 try {
                     // Se verifica daca a expirat timpul de citire
                     if (System.currentTimeMillis() - startTime > readTimeout) {
@@ -279,8 +267,9 @@ class BluetoothCommunication(private val context: Context) {
                                 processReceivedLine(line)
                                 
                                 // Verificam daca am citit datele de la ambii senzori, iar in caz afirmativ, iesim din bucla
-                                if (bothSensorsRead.get()) {
-                                    Log.d(TAG, "Both sensors read successfully, stopping read thread")
+                                if (sensor1Read && sensor2Read) {
+                                    Log.d(TAG, "Au fost citite datele de la ambii senzori.")
+                                    notifyDataUpdate() // Notificam CameraFragment prin intermediul listener-ului onDataUpdate()
                                     break
                                 }
                             }
@@ -303,56 +292,42 @@ class BluetoothCommunication(private val context: Context) {
             // S-a incheiat citirea datelor, se reseteaza contorul de stare
             isReadingActive.set(false)
             
-            // If we didn't get both sensor values, provide fallback
-            if (!bothSensorsRead.get()) {
+            // Daca nu s-au citit datele de la ambii senzori, folosim date de fallback
+            if (!(sensor1Read && sensor2Read)) {
                 Log.d(TAG, "Nu s-au citit datele de la ambii senzori. Folosim datele de fallback.")
                 provideFallbackData()
-            }
-            
-            // Verificam daca a fost initiat un nou ciclu de citire
-            if (isReadingRequested.get() && isConnected) {
-                Log.d(TAG, "Incepe un nou ciclu de citire.")
-                isReadingRequested.set(false)
-                startReadingData()
             }
         }
     }
 
     // Procesam datele primite linie cu linie
     private fun processReceivedLine(line: String) {
-        Log.d(TAG, "Received line: $line")
+        Log.d(TAG, "Linia primita: $line")
 
         try {
             // Datele vor fi de forma "S1:XX.XX"
             if (line.startsWith("S1:")) {
                 val valueStr = line.substringAfter("S1:")
-                Log.d(TAG, "S1 value string: ->${valueStr}<-")
                 val floatValue = valueStr.toFloatOrNull()
-                Log.d(TAG, "S1 parsed value: $floatValue")
+                Log.d(TAG, "Valoarea S1 ca float: $floatValue")
                 if (floatValue != null) {
                     val sensor1 = floatValue.toInt()
-                    Log.d(TAG, "S1 parsed value: $sensor1")
                     if (sensor1 > 0) {
                         lastSensor1Distance = sensor1
-                        lastDataReceivedTime = System.currentTimeMillis()
-                        Log.d(TAG, "Updated Sensor1: $sensor1 cm")
+                        Log.d(TAG, "Valoarea senzorului 1 (stanga) a fost actualizata la $sensor1 cm")
                         sensor1Read = true
-                        checkBothSensorsRead()
                     }
                 }
             } else if (line.startsWith("S2:")) {
                 val valueStr = line.substringAfter("S2:")
-                Log.d(TAG, "S2 value string: ->${valueStr}<-")
                 val floatValue = valueStr.toFloatOrNull()
+                Log.d(TAG, "S2 parsed value: $floatValue")
                 if (floatValue != null) {
                     val sensor2 = floatValue.toInt()
-                    Log.d(TAG, "S2 parsed value: $sensor2")
                     if (sensor2 > 0) {
                         lastSensor2Distance = sensor2
-                        lastDataReceivedTime = System.currentTimeMillis()
-                        Log.d(TAG, "Updated Sensor2: $sensor2 cm")
+                        Log.d(TAG, "Valoarea senzorului 2 (dreapta) a fost actualizata la $sensor2 cm")
                         sensor2Read = true
-                        checkBothSensorsRead()
                     }
                 }
             }
@@ -361,15 +336,6 @@ class BluetoothCommunication(private val context: Context) {
         }
     }
 
-    private fun checkBothSensorsRead() {
-        if (sensor1Read && sensor2Read) {
-            bothSensorsRead.set(true)
-            notifyDataUpdate()
-            
-            // Citirea se incheie cand sunt citite masuratorile ambelor senzori
-            isReadingActive.set(false)
-        }
-    }
 
     private fun notifyDataUpdate() {
         handler.post {
@@ -388,8 +354,7 @@ class BluetoothCommunication(private val context: Context) {
     }
 
     fun disconnect() {
-        isReadingActive.set(false)
-        isReadingRequested.set(false)
+        isReadingActive.set(false) // Stop any active reading
         
         connectionThread?.interrupt()
         readThread?.interrupt()
