@@ -1,4 +1,4 @@
-# AINavAssist: Automatic detection system for people with visual impairments
+# AINavAssist: Automatic Obstacle Detection System for Individuals with Visual Impairments
 
 This is my Bachelor's thesis project, developed at the Faculty of Electronics, Telecommunications and Information Technology in Bucharest (ETTI). The goal is to help visually impaired individuals move around more safely by using real-time object detection and voice feedback on an Android device.
 
